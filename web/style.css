@@ -1,0 +1,45 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9f9f9; color: #1a1a1a; min-height: 100vh; }
+h2.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* ── App shell ── */
+.app { max-width: 1440px; margin: 0 auto; padding: 16px; }
+.app-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.app-title { font-size: 15px; font-weight: 600; color: #18181b; }
+.app-title span { font-weight: 400; color: #71717a; font-size: 13px; margin-left: 6px; }
+
+/* ── Two-column split ── */
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+
+/* ── Panel card ── */
+.panel { background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; overflow: hidden; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #f0f0f0; }
+.panel-title { font-size: 12px; font-weight: 600; color: #3f3f46; display: flex; align-items: center; gap: 6px; }
+.panel-body { padding: 12px; }
+
+/* ── Video panel ── */
+.video-area { background: #0d0d0d; border-radius: 8px; aspect-ratio: 16/9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #fff; cursor: pointer; transition: background .15s; position: relative; overflow: hidden; }
+.video-area:hover, .video-area.drag-over { background: #1a1a1a; }
+.video-area video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+.video-placeholder-text { text-align: center; pointer-events: none; }
+.video-placeholder-text p { font-size: 13px; opacity: .7; margin-top: 4px; }
+.video-placeholder-text small { font-size: 11px; opacity: .4; }
+#video-input { display: none; }
+.video-controls { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.video-sync-badge { font-size: 11px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 20px; padding: 2px 8px; }
+
+/* ── Tracker panel ── */
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 10px; }
+.stat { background: #f4f4f5; border-radius: 8px; padding: 7px 10px; }
+.stat-label { font-size: 10px; color: #71717a; margin: 0 0 2px; }
+.stat-val { font-size: 15px; font-weight: 500; color: #18181b; margin: 0; }
+.ctrl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: #52525b; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 20px; font-weight: 500; }
+button { padding: 4px 10px; border: 1px solid #e4e4e7; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: #3f3f46; }
+button:hover { background: #f4f4f5; }
+
+/* ── Pitch canvas ── */
+#pitch-wrap { position: relative; }
+#pitch-wrap canvas { width: 100% !important; height: auto !important; display: block; border-radius: 6px; }
+.tooltip-box { position: absolute; background: #fff; border: 0.5px solid #e4e4e7; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #52525b; pointer-events: none; opacity: 0; transition: opacity .1s; white-space: nowrap; z-index: 10; top: 0; left: 0; }
