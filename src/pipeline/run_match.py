@@ -7,7 +7,7 @@ from pathlib import Path
 from src.video import VideoReader, FrameSampler, TimeWindowFilter
 from src.analytics import PlayPhaseDetector
 from src.detection import YoloDetector
-from src.tracking import ByteTrackTracker
+from src.tracking import ByteTrackTracker, SamSegmenter
 
 app = typer.Typer(help="Football analytics pipeline CLI")
 
@@ -20,8 +20,10 @@ def run(
     resize: Optional[Tuple[int, int]] = None,
     output_video: Optional[str] = None,
     display: bool = False,
-    detect_play: bool = False,
+    detect_play: bool = True,
     only_in_play: bool = False,
+    tracker_type: str = 'bytetrack',
+    sam_model: str = 'models/sam2_t.pt',
 ) -> None:
     print(f'Running pipeline on: {video_path} (start={start_time} end={end_time} stride={stride} resize={resize})')
     reader = VideoReader(video_path)
@@ -40,6 +42,7 @@ def run(
     detector = YoloDetector()
     tracker = ByteTrackTracker()
     play_detector = PlayPhaseDetector() if detect_play else None
+    sam_segmenter = SamSegmenter(model_path=sam_model) if tracker_type == 'bytetrack_sam' else None
 
     for frame in reader:
         in_play = True
@@ -54,6 +57,11 @@ def run(
         if in_play:
             pred = detector.predict(frame.image)
             tracks = tracker.update(pred)
+            if sam_segmenter is not None and len(tracks) > 0:
+                bboxes = np.array([t.box for t in tracks])
+                masks = sam_segmenter.segment(frame.image, bboxes)
+                for i, t in enumerate(tracks):
+                    t.mask = masks[i]
         else:
             tracks = []
 
@@ -66,6 +74,17 @@ def run(
             cv2.putText(frame_vis, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
 
         if in_play:
+            # Draw segmentation masks first
+            for t in tracks:
+                if getattr(t, 'mask', None) is not None:
+                    # Deterministic color per track ID
+                    mask_color = (
+                        int((t.track_id * 50) % 256),
+                        int((t.track_id * 80) % 256),
+                        int((t.track_id * 120) % 256)
+                    )
+                    frame_vis[t.mask] = (frame_vis[t.mask] * 0.6 + np.array(mask_color) * 0.4).astype(np.uint8)
+
             for t in tracks:
                 x1, y1, x2, y2 = t.box.astype(int)
                 # Draw rectangle and track ID
@@ -108,8 +127,10 @@ def cli(
     resize: Optional[str] = typer.Option(None, help='Resize as WIDTHxHEIGHT, e.g. 1280x720'),
     output_video: Optional[str] = typer.Option(None, help='Path to save output video with tracks drawn'),
     display: bool = typer.Option(False, help='Display frames in a window during processing'),
-    detect_play: bool = typer.Option(False, help='Enable play phase detection'),
+    detect_play: bool = typer.Option(True, help='Enable play phase detection'),
     only_in_play: bool = typer.Option(False, help='Only process and output frames that are in play'),
+    tracker_type: str = typer.Option('bytetrack', help='Tracker type: bytetrack or bytetrack_sam'),
+    sam_model: str = typer.Option('models/sam2_t.pt', help='Path to SAM2 model weights'),
 ) -> None:
     """Run the match processing pipeline."""
     resize_tuple: Optional[Tuple[int, int]] = None
@@ -121,7 +142,8 @@ def cli(
             raise typer.BadParameter("resize must be like 1280x720")
 
     run(video_path=video_path, start_time=start_time, end_time=end_time, stride=stride, resize=resize_tuple,
-        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play)
+        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play,
+        tracker_type=tracker_type, sam_model=sam_model)
 
 
 def run_cli() -> None:

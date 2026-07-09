@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Optional
 
 import numpy as np
 
@@ -13,6 +13,7 @@ class Track:
     box: np.ndarray  # [x1, y1, x2, y2]
     score: float
     class_id: int
+    mask: Optional[np.ndarray] = None
 
 
 class Tracker(ABC):
