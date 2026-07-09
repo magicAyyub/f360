@@ -1,12 +1,12 @@
 import cv2 as cv
 
-from src.video.reader import FrameSampler, TimeWindowSampler, VideoReader
+from src.video.reader import FrameSampler, TimeWindowFilter, VideoReader
 
 video_path = 'data/PSG_vs_Bayern_Munchen.mp4'
 print('reading the video file...')
 
 reader = VideoReader(video_path)
-window = TimeWindowSampler(reader, start_time=300.0, end_time=360.0)
+window = TimeWindowFilter(reader, start_time=300.0, end_time=360.0)
 sampler = FrameSampler(window, stride=2, resize=(1280, 720))
 
 for frame in sampler:

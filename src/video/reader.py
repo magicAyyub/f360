@@ -56,7 +56,7 @@ class FrameSampler:
         return cv2.resize(image, self.resize, interpolation=cv2.INTER_AREA)
 
 
-class TimeWindowSampler:
+class TimeWindowFilter:
     """Filter frames by a start/end timestamp window."""
 
     def __init__(

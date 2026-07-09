@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-from src.video.reader import VideoReader, FrameSampler, TimeWindowSampler
+from src.video import VideoReader, FrameSampler, TimeWindowFilter
+from src.analytics import PlayPhaseDetector
 from src.detection import YoloDetector
 from src.tracking import ByteTrackTracker
 
@@ -19,6 +20,8 @@ def run(
     resize: Optional[Tuple[int, int]] = None,
     output_video: Optional[str] = None,
     display: bool = False,
+    detect_play: bool = False,
+    only_in_play: bool = False,
 ) -> None:
     print(f'Running pipeline on: {video_path} (start={start_time} end={end_time} stride={stride} resize={resize})')
     reader = VideoReader(video_path)
@@ -30,27 +33,46 @@ def run(
         Path(output_video).parent.mkdir(parents=True, exist_ok=True)
 
     if start_time is not None or end_time is not None:
-        reader = TimeWindowSampler(reader, start_time=start_time or 0.0, end_time=end_time)
+        reader = TimeWindowFilter(reader, start_time=start_time or 0.0, end_time=end_time)
     if stride != 1 or resize is not None:
         reader = FrameSampler(reader, stride=stride, resize=resize)
 
     detector = YoloDetector()
     tracker = ByteTrackTracker()
+    play_detector = PlayPhaseDetector() if detect_play else None
 
     for frame in reader:
-        pred = detector.predict(frame.image)
-        tracks = tracker.update(pred)
+        in_play = True
+        play_metrics = {}
 
-        # Draw bounding boxes on the frame
+        if play_detector:
+            in_play, play_metrics = play_detector.is_in_play(frame.image, detector)
+
+        if not in_play and only_in_play:
+            continue
+
+        if in_play:
+            pred = detector.predict(frame.image)
+            tracks = tracker.update(pred)
+        else:
+            tracks = []
+
+        # Draw bounding boxes and play phase on the frame
         frame_vis = frame.image.copy()
-        
-        for t in tracks:
-            x1, y1, x2, y2 = t.box.astype(int)
-            # Draw rectangle and track ID
-            cv2.rectangle(frame_vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f"Track {t.track_id} ({t.score:.2f})"
-            cv2.putText(frame_vis, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            print(f"Track {t.track_id}: box={x1,y1,x2,y2} score={t.score:.2f} class={t.class_id}")
+
+        if play_detector:
+            status_text = f"PLAYING (Green: {play_metrics.get('green_ratio', 0.0):.2f})" if in_play else f"OUT OF PLAY ({play_metrics.get('reason', '')})"
+            color = (0, 255, 0) if in_play else (0, 0, 255)
+            cv2.putText(frame_vis, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+
+        if in_play:
+            for t in tracks:
+                x1, y1, x2, y2 = t.box.astype(int)
+                # Draw rectangle and track ID
+                cv2.rectangle(frame_vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                label = f"Track {t.track_id} ({t.score:.2f})"
+                cv2.putText(frame_vis, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                print(f"Track {t.track_id}: box={x1,y1,x2,y2} score={t.score:.2f} class={t.class_id}")
 
         # Initialize video writer on first frame
         if output_video and video_writer is None:
@@ -86,6 +108,8 @@ def cli(
     resize: Optional[str] = typer.Option(None, help='Resize as WIDTHxHEIGHT, e.g. 1280x720'),
     output_video: Optional[str] = typer.Option(None, help='Path to save output video with tracks drawn'),
     display: bool = typer.Option(False, help='Display frames in a window during processing'),
+    detect_play: bool = typer.Option(False, help='Enable play phase detection'),
+    only_in_play: bool = typer.Option(False, help='Only process and output frames that are in play'),
 ) -> None:
     """Run the match processing pipeline."""
     resize_tuple: Optional[Tuple[int, int]] = None
@@ -97,7 +121,7 @@ def cli(
             raise typer.BadParameter("resize must be like 1280x720")
 
     run(video_path=video_path, start_time=start_time, end_time=end_time, stride=stride, resize=resize_tuple,
-        output_video=output_video, display=display)
+        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play)
 
 
 def run_cli() -> None:
@@ -107,3 +131,4 @@ def run_cli() -> None:
 
 if __name__ == '__main__':
     app()
+
