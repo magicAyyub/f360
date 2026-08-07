@@ -1,57 +1,45 @@
-# Football Analytics Project Test Guide
+# Quick Test Guide
 
-This guide provides instructions to run automated tests, execute different pipeline tracking configurations, and run performance benchmarks.
+## Unit tests
 
----
+Tests mock the model weights so they run instantly and without downloads.
 
-## 1. Running Automated Unit Tests
-
-Automated tests are built with `pytest` and mock the model weights (YOLO, ByteTrack, SAM2) to execute instantly and reliably.
-
-Run the test suite using `uv`:
 ```bash
 uv run pytest
 ```
 
-### Test Coverage
-* **Play Detection Heuristics:** [test_play_detector.py](tests/test_play_detector.py) (verifies green ratio, player counts, and player height checks).
-* **ByteTrack Tracker:** [test_bytetrack_tracker.py](tests/test_bytetrack_tracker.py) (verifies track updates, object formatting, and class logic).
-* **SAM2 Segmenter:** [test_sam_segmenter.py](tests/test_sam_segmenter.py) (verifies target mask creation, dimensions, and index mapping).
+Coverage:
 
----
+* Video reader: [test_video_reader.py](tests/test_video_reader.py) verifies frame rate propagation through the sampler chain, and that seeking agrees with full decoding on frame ids and timestamps.
+* Play detection heuristics: [test_play_detector.py](tests/test_play_detector.py) verifies the green ratio, player counts, close-up rejection, and that the green short-circuit avoids running the detector.
+* ByteTrack tracker: [test_bytetrack_tracker.py](tests/test_bytetrack_tracker.py) verifies track updates and prediction conversion.
 
-## 2. Pipeline Execution Commands
+## Pipeline
 
-The processing pipeline is executed using the `run-match` package entry point.
+The pipeline runs through the `run-match` entry point. Detection is restricted to the COCO person class, and the output video is written at the source frame rate divided by the stride.
 
-### A. Default Pipeline (Fast Track)
-Processes the match clip using **YOLOv5** and **ByteTrack** for tracking without segmentation masks. This is the recommended mode for standard analytics.
+Standard run over a ten second window:
+
 ```bash
-uv run run-match --start-time 315 --end-time 325 --output-video outputs/fast_run.mp4
+uv run run-match --start-time 315 --end-time 325 --output-video outputs/run.mp4
 ```
 
-### B. SAM2 Player Segmentation Pipeline (Visual Enhancement)
-Processes the match clip using **YOLOv5**, **ByteTrack**, and **SAM2** to generate transparent, color-coded segmentation masks for every player.
+Half the frames, same wall-clock duration in the output:
+
 ```bash
-uv run run-match --start-time 315 --end-time 325 --tracker-type bytetrack_sam --output-video outputs/sam_run.mp4
+uv run run-match --start-time 315 --end-time 325 --stride 2 --output-video outputs/run_stride2.mp4
 ```
 
-### C. Play Phase Filter
-Only processes and outputs frames that are classified as "PLAYING" (bypassing close-ups, replays, and low-green shots to speed up execution).
+Keep only frames classified as in play, skipping replays and close-ups. The tracker resets at each play-phase boundary, so track ids are not carried across a cut:
+
 ```bash
-uv run run-match --start-time 315 --end-time 325 --only-in-play --output-video outputs/only_play.mp4
+uv run run-match --start-time 315 --end-time 325 --only-in-play --output-video outputs/in_play.mp4
 ```
 
----
+## Performance profiling
 
-## 3. Profiling Performance and Component Latency
-
-To profile memory usage and identify speed bottlenecks across frames, execute the benchmarking script:
 ```bash
 uv run python src/analytics/benchmark.py
 ```
 
-This script will run on your active compute device (CPU or MPS on macOS) and print:
-* Average throughput (FPS) and latency (ms) per frame.
-* Memory usage (RSS RAM).
-* Latency breakdown for video decoding, play phase heuristics, YOLO, ByteTrack, and SAM2.
+Reports throughput, per-frame latency, RSS memory, and a latency breakdown across decode, green-ratio heuristic, YOLO and ByteTrack. It also reports detector calls per frame, which must stay at 1.00: anything higher means the play detector and the pipeline are each running inference instead of sharing one prediction.
