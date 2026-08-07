@@ -28,3 +28,5 @@ Apply these guidelines strictly to ensure code quality, readability, and a natur
 * Avoid synthetic indicators like emojis in files or commits.
 * Do not use generated-looking decorations or separators such as raw dashes (—), double-equals (====), hyphens (----), or underscores (___).
 * Keep lists, headings, and code layouts clean and readable.
+* Ovoid things like 1., 2., etc
+* Ovoid being too verbose in docstring and descriptions
