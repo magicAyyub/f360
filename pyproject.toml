@@ -17,14 +17,17 @@ dependencies = [
     "typer>=0.9",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=9.1.1",
-]
-
 [project.scripts]
 run-match = "src.pipeline.run_match:run_cli"
+eval-tracks = "src.evaluation.cli:run_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src", "src.*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "motmetrics>=1.4.0",
+    "trackeval>=1.3.0",
+]

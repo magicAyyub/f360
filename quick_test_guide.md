@@ -36,6 +36,24 @@ Keep only frames classified as in play, skipping replays and close-ups. The trac
 uv run run-match --start-time 315 --end-time 325 --only-in-play --output-video outputs/in_play.mp4
 ```
 
+## Evaluation
+
+The pipeline can dump its tracks in MOTChallenge format, which is what the metrics read and what SoccerNet ground truth already ships as:
+
+```bash
+uv run run-match --start-time 315 --end-time 325 --output-tracks outputs/pred.txt
+```
+
+Score a prediction file against ground truth:
+
+```bash
+uv run eval-tracks path/to/gt.txt outputs/pred.txt
+```
+
+HOTA, DetA and AssA come from TrackEval and average over its localisation thresholds, so they ignore `--iou-threshold`. MOTA, IDF1, precision and recall come from motmetrics and depend on it. Frame numbers are 1-based and local to the evaluated window, not source video frame ids, so ground truth must be labelled over the same window the pipeline ran on.
+
+Scoring a prediction file against itself returns 1.0 everywhere, which is the quickest check that a new ground truth file parses the way you expect.
+
 ## Performance profiling
 
 ```bash

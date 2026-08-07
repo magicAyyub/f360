@@ -1,11 +1,13 @@
 from typing import Optional, Tuple
 import typer
 import cv2
+import numpy as np
 from pathlib import Path
 
 from src.video import VideoReader, FrameSampler, TimeWindowFilter
 from src.analytics import PlayPhaseDetector
 from src.detection import YoloDetector
+from src.evaluation import save_mot, tracks_to_mot
 from src.tracking import ByteTrackTracker
 
 app = typer.Typer(help="Football analytics pipeline CLI")
@@ -22,6 +24,7 @@ def run(
     stride: int = 1,
     resize: Optional[Tuple[int, int]] = None,
     output_video: Optional[str] = None,
+    output_tracks: Optional[str] = None,
     display: bool = False,
     detect_play: bool = True,
     only_in_play: bool = False,
@@ -50,8 +53,11 @@ def run(
     play_detector = PlayPhaseDetector() if detect_play else None
 
     was_in_play = False
+    mot_rows = []
 
-    for frame in reader:
+    # Numérotation locale à la séquence, base 1: c'est ce que la vérité terrain
+    # utilise. frame.frame_id indexe la vidéo source et survit au seek.
+    for sequence_frame, frame in enumerate(reader, start=1):
         play_metrics = {}
         prediction = None
         in_play = True
@@ -72,6 +78,9 @@ def run(
             tracks = []
 
         was_in_play = in_play
+
+        if output_tracks:
+            mot_rows.append(tracks_to_mot(sequence_frame, tracks))
 
         if not in_play and only_in_play:
             continue
@@ -109,6 +118,11 @@ def run(
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
+    if output_tracks:
+        rows = np.vstack(mot_rows) if mot_rows else np.zeros((0, 7))
+        save_mot(rows, output_tracks)
+        print(f"Wrote {len(rows)} track rows to: {output_tracks}")
+
     # Clean up
     if video_writer is not None:
         video_writer.release()
@@ -126,6 +140,7 @@ def cli(
     stride: int = typer.Option(1, help='Frame stride (sampling)'),
     resize: Optional[str] = typer.Option(None, help='Resize as WIDTHxHEIGHT, e.g. 1280x720'),
     output_video: Optional[str] = typer.Option(None, help='Path to save output video with tracks drawn'),
+    output_tracks: Optional[str] = typer.Option(None, help='Path to save tracks in MOTChallenge format'),
     display: bool = typer.Option(False, help='Display frames in a window during processing'),
     detect_play: bool = typer.Option(True, help='Enable play phase detection'),
     only_in_play: bool = typer.Option(False, help='Only process and output frames that are in play'),
@@ -140,7 +155,8 @@ def cli(
             raise typer.BadParameter("resize must be like 1280x720")
 
     run(video_path=video_path, start_time=start_time, end_time=end_time, stride=stride, resize=resize_tuple,
-        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play)
+        output_video=output_video, output_tracks=output_tracks, display=display,
+        detect_play=detect_play, only_in_play=only_in_play)
 
 
 def run_cli() -> None:
