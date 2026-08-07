@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Optional, Sequence
 
 import numpy as np
 from ultralytics import YOLO
@@ -10,7 +10,12 @@ from .base import Detector, Prediction
 
 
 class YoloDetector(Detector):
-    def __init__(self, model_path: str = 'models/yolov5su.pt', conf: float = 0.25):
+    def __init__(
+        self,
+        model_path: str = 'models/yolov5su.pt',
+        conf: float = 0.25,
+        classes: Optional[Sequence[int]] = None,
+    ):
         # Fallback to yolov5s.pt if the default model is missing
         if model_path == 'models/yolov5su.pt' and not os.path.exists(model_path):
             model_path = 'models/yolov5s.pt'
@@ -22,14 +27,27 @@ class YoloDetector(Detector):
 
         self.model = YOLO(model_path)
         self.conf = conf
+        self.classes = list(classes) if classes is not None else None
 
     def predict(self, frame: Any) -> Prediction:
-        result = self.model.predict(source=frame, conf=self.conf, verbose=False)
-        prediction = result[0]
+        result = self.model.predict(
+            source=frame,
+            conf=self.conf,
+            classes=self.classes,
+            verbose=False,
+        )
+        boxes = result[0].boxes
 
-        boxes = prediction.boxes.xyxy.numpy() if prediction.boxes is not None else np.zeros((0, 4), dtype=float)
-        scores = prediction.boxes.conf.numpy() if prediction.boxes is not None else np.zeros((0,), dtype=float)
-        classes = prediction.boxes.cls.numpy().astype(int) if prediction.boxes is not None else np.zeros((0,), dtype=int)
+        if boxes is None or len(boxes) == 0:
+            return Prediction(
+                boxes=np.zeros((0, 4), dtype=float),
+                scores=np.zeros((0,), dtype=float),
+                classes=np.zeros((0,), dtype=int),
+            )
 
-        return Prediction(boxes=boxes, scores=scores, classes=classes)
-
+        # .cpu() est nécessaire: les tenseurs restent sur MPS/CUDA sinon
+        return Prediction(
+            boxes=boxes.xyxy.cpu().numpy(),
+            scores=boxes.conf.cpu().numpy(),
+            classes=boxes.cls.cpu().numpy().astype(int),
+        )

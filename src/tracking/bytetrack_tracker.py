@@ -12,44 +12,11 @@ def _to_detections(prediction: Any) -> sv.Detections:
     if isinstance(prediction, sv.Detections):
         return prediction
 
-    if hasattr(prediction, "boxes") and hasattr(prediction.boxes, "xyxy"):
-        return sv.Detections.from_ultralytics(prediction)
-
-    as_np = lambda x: x.cpu().numpy() if hasattr(x, "cpu") else np.asarray(x)
-
-    if hasattr(prediction, "boxes") and hasattr(prediction, "scores"):
-        boxes = as_np(prediction.boxes).reshape(-1, 4)
-        scores = as_np(prediction.scores).ravel()
-        cls = getattr(prediction, "class_ids", getattr(prediction, "classes", None))
-        class_ids = as_np(cls).ravel().astype(int) if cls is not None else np.zeros(len(boxes), int)
-        return sv.Detections(xyxy=boxes, confidence=scores, class_id=class_ids)
-
-    if isinstance(prediction, dict):
-        boxes = as_np(prediction["boxes"]).reshape(-1, 4)
-        scores = as_np(prediction.get("scores", np.ones(len(boxes)))).ravel()
-        cls = prediction.get("class_ids", prediction.get("labels"))
-        class_ids = as_np(cls).ravel().astype(int) if cls is not None else np.zeros(len(boxes), int)
-        return sv.Detections(xyxy=boxes, confidence=scores, class_id=class_ids)
-
-    if isinstance(prediction, (tuple, list)) and len(prediction) >= 2:
-        boxes = as_np(prediction[0]).reshape(-1, 4)
-        scores = as_np(prediction[1]).ravel()
-        class_ids = (
-            as_np(prediction[2]).ravel().astype(int)
-            if len(prediction) > 2 and prediction[2] is not None
-            else np.zeros(len(boxes), int)
-        )
-        return sv.Detections(xyxy=boxes, confidence=scores, class_id=class_ids)
-
-    arr = as_np(prediction)
-    if arr.ndim == 2 and arr.shape[1] >= 5:
-        return sv.Detections(
-            xyxy=arr[:, :4],
-            confidence=arr[:, 4],
-            class_id=arr[:, 5].astype(int) if arr.shape[1] >= 6 else np.zeros(len(arr), int),
-        )
-
-    raise TypeError(f"Unsupported prediction format: {type(prediction)!r}")
+    return sv.Detections(
+        xyxy=np.asarray(prediction.boxes, dtype=float).reshape(-1, 4),
+        confidence=np.asarray(prediction.scores, dtype=float).ravel(),
+        class_id=np.asarray(prediction.classes, dtype=int).ravel(),
+    )
 
 
 class ByteTrackTracker(Tracker):

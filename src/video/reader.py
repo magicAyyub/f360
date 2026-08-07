@@ -8,16 +8,40 @@ Size = Tuple[int, int]
 
 
 class VideoReader:
-    """Iterable wrapper around a video file, yielding frames with timestamps."""
+    """Iterable wrapper around a video file, yielding frames with timestamps.
 
-    def __init__(self, video_path: str):
+    When start_time is set the capture seeks instead of decoding every preceding
+    frame. The seek lands on the nearest keyframe, so it may start slightly before
+    the requested time; wrap with TimeWindowFilter when the boundary must be exact.
+    """
+
+    def __init__(self, video_path: str, start_time: float = 0.0):
+        if start_time < 0:
+            raise ValueError("start_time must be non-negative")
+
         self.video_path = video_path
+        self.start_time = start_time
+        self._fps: Optional[float] = None
+
+    @property
+    def fps(self) -> float:
+        if self._fps is None:
+            cap = cv2.VideoCapture(self.video_path)
+            self._fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            cap.release()
+        return self._fps
 
     def __iter__(self) -> Iterator[Frame]:
         cap = cv2.VideoCapture(self.video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        self._fps = fps
 
         frame_id = 0
+        if self.start_time > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(self.start_time * fps))
+            # On relit la position réelle: le seek atterrit sur une keyframe
+            frame_id = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
         while True:
             success, image = cap.read()
             if not success:
@@ -43,6 +67,11 @@ class FrameSampler:
         self.source = source
         self.stride = stride
         self.resize = resize
+
+    @property
+    def fps(self) -> float:
+        """Rate at which this sampler emits frames, not the rate of the source."""
+        return self.source.fps / self.stride
 
     def __iter__(self) -> Iterator[Frame]:
         for index, frame in enumerate(self.source):
@@ -73,6 +102,10 @@ class TimeWindowFilter:
         self.source = source
         self.start_time = start_time
         self.end_time = end_time
+
+    @property
+    def fps(self) -> float:
+        return self.source.fps
 
     def __iter__(self) -> Iterator[Frame]:
         for frame in self.source:

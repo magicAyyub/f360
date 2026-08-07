@@ -1,6 +1,6 @@
 from .base import Detector, Prediction
 
-__all__ = ['Detector', 'Prediction', 'YoloDetector', 'RTDetrDetector']
+__all__ = ['Detector', 'Prediction', 'YoloDetector']
 
 
 def __getattr__(name: str):
@@ -8,10 +8,6 @@ def __getattr__(name: str):
         from .yolo_detector import YoloDetector
 
         return YoloDetector
-    if name == 'RTDetrDetector':
-        from .rtdetr_detector import RTDetrDetector
-
-        return RTDetrDetector
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
 

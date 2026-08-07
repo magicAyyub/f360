@@ -1,15 +1,18 @@
 from typing import Optional, Tuple
 import typer
 import cv2
-import numpy as np
 from pathlib import Path
 
 from src.video import VideoReader, FrameSampler, TimeWindowFilter
 from src.analytics import PlayPhaseDetector
 from src.detection import YoloDetector
-from src.tracking import ByteTrackTracker, SamSegmenter
+from src.tracking import ByteTrackTracker
 
 app = typer.Typer(help="Football analytics pipeline CLI")
+
+# COCO person: seul classe pertinente ici, sinon ByteTrack suit aussi
+# les "sports ball", "frisbee", "tv" que YOLO sort sur du foot télévisé
+PERSON_CLASS = 0
 
 
 def run(
@@ -22,15 +25,14 @@ def run(
     display: bool = False,
     detect_play: bool = True,
     only_in_play: bool = False,
-    tracker_type: str = 'bytetrack',
-    sam_model: str = 'models/sam2_t.pt',
 ) -> None:
     print(f'Running pipeline on: {video_path} (start={start_time} end={end_time} stride={stride} resize={resize})')
-    reader = VideoReader(video_path)
+
+    # Le seek évite de décoder puis jeter toutes les frames avant start_time
+    reader = VideoReader(video_path, start_time=start_time or 0.0)
 
     # Setup video writer if output requested
     video_writer = None
-    frame_width, frame_height = None, None
     if output_video:
         Path(output_video).parent.mkdir(parents=True, exist_ok=True)
 
@@ -39,31 +41,40 @@ def run(
     if stride != 1 or resize is not None:
         reader = FrameSampler(reader, stride=stride, resize=resize)
 
-    detector = YoloDetector()
-    tracker = ByteTrackTracker()
+    # Cadence réelle des frames émises, stride compris: pilote ByteTrack et l'écriture
+    output_fps = reader.fps
+    print(f'Effective frame rate: {output_fps:.2f} fps')
+
+    detector = YoloDetector(classes=[PERSON_CLASS])
+    tracker = ByteTrackTracker(frame_rate=output_fps)
     play_detector = PlayPhaseDetector() if detect_play else None
-    sam_segmenter = SamSegmenter(model_path=sam_model) if tracker_type == 'bytetrack_sam' else None
+
+    was_in_play = False
 
     for frame in reader:
-        in_play = True
         play_metrics = {}
+        prediction = None
+        in_play = True
 
         if play_detector:
-            in_play, play_metrics = play_detector.is_in_play(frame.image, detector)
+            phase = play_detector.evaluate(frame.image, detector)
+            in_play, play_metrics, prediction = phase.in_play, phase.metrics, phase.prediction
+
+        if in_play:
+            if prediction is None:
+                prediction = detector.predict(frame.image)
+            tracks = tracker.update(prediction)
+        else:
+            # ByteTrack n'avance son compteur interne que sur update(), donc sauter
+            # une coupure réassocierait des IDs périmés à la reprise
+            if was_in_play:
+                tracker.reset()
+            tracks = []
+
+        was_in_play = in_play
 
         if not in_play and only_in_play:
             continue
-
-        if in_play:
-            pred = detector.predict(frame.image)
-            tracks = tracker.update(pred)
-            if sam_segmenter is not None and len(tracks) > 0:
-                bboxes = np.array([t.box for t in tracks])
-                masks = sam_segmenter.segment(frame.image, bboxes)
-                for i, t in enumerate(tracks):
-                    t.mask = masks[i]
-        else:
-            tracks = []
 
         # Draw bounding boxes and play phase on the frame
         frame_vis = frame.image.copy()
@@ -74,17 +85,6 @@ def run(
             cv2.putText(frame_vis, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
 
         if in_play:
-            # Draw segmentation masks first
-            for t in tracks:
-                if getattr(t, 'mask', None) is not None:
-                    # Deterministic color per track ID
-                    mask_color = (
-                        int((t.track_id * 50) % 256),
-                        int((t.track_id * 80) % 256),
-                        int((t.track_id * 120) % 256)
-                    )
-                    frame_vis[t.mask] = (frame_vis[t.mask] * 0.6 + np.array(mask_color) * 0.4).astype(np.uint8)
-
             for t in tracks:
                 x1, y1, x2, y2 = t.box.astype(int)
                 # Draw rectangle and track ID
@@ -97,7 +97,7 @@ def run(
         if output_video and video_writer is None:
             frame_height, frame_width = frame_vis.shape[:2]
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(output_video, fourcc, 30.0, (frame_width, frame_height))
+            video_writer = cv2.VideoWriter(output_video, fourcc, output_fps, (frame_width, frame_height))
 
         # Write to output video
         if video_writer is not None:
@@ -129,8 +129,6 @@ def cli(
     display: bool = typer.Option(False, help='Display frames in a window during processing'),
     detect_play: bool = typer.Option(True, help='Enable play phase detection'),
     only_in_play: bool = typer.Option(False, help='Only process and output frames that are in play'),
-    tracker_type: str = typer.Option('bytetrack', help='Tracker type: bytetrack or bytetrack_sam'),
-    sam_model: str = typer.Option('models/sam2_t.pt', help='Path to SAM2 model weights'),
 ) -> None:
     """Run the match processing pipeline."""
     resize_tuple: Optional[Tuple[int, int]] = None
@@ -142,8 +140,7 @@ def cli(
             raise typer.BadParameter("resize must be like 1280x720")
 
     run(video_path=video_path, start_time=start_time, end_time=end_time, stride=stride, resize=resize_tuple,
-        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play,
-        tracker_type=tracker_type, sam_model=sam_model)
+        output_video=output_video, display=display, detect_play=detect_play, only_in_play=only_in_play)
 
 
 def run_cli() -> None:

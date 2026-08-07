@@ -1,3 +1,3 @@
-from .play_detector import PlayPhaseDetector
+from .play_detector import PlayPhase, PlayPhaseDetector
 
-__all__ = ['PlayPhaseDetector']
+__all__ = ['PlayPhase', 'PlayPhaseDetector']
