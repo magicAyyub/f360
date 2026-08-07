@@ -54,6 +54,34 @@ HOTA, DetA and AssA come from TrackEval and average over its localisation thresh
 
 Scoring a prediction file against itself returns 1.0 everywhere, which is the quickest check that a new ground truth file parses the way you expect.
 
+## SoccerNet calibration
+
+SoccerNet tracking data and labels are public. Only the raw broadcast videos need the NDA, so no form is required for this. The splits live on the project's ownCloud server behind a generic password, and the archives support HTTP range requests, so a single sequence can be pulled without downloading the 8 GB split:
+
+```bash
+uv run --with remotezip python -c "
+from remotezip import RemoteZip
+url = 'https://exrcsdrive.kaust.edu.sa/public.php/webdav/test.zip'
+with RemoteZip(url, auth=('o9tzUs2GcuEwcnr', 'SoccerNet')) as z:
+    for name in z.namelist():
+        if name.startswith('test/SNMOT-116/'):
+            z.extract(name, 'data/SoccerNet')
+"
+```
+
+A sequence is standard MOT: `img1/` frames, `gt/gt.txt`, `det/det.txt`, `seqinfo.ini`, plus a SoccerNet-specific `gameinfo.ini` mapping each tracklet to a role. Frames are 1-based and ground truth has ten columns, the last three unused.
+
+Track a sequence, then score it:
+
+```bash
+uv run run-sequence data/SoccerNet/test/SNMOT-116 --output-tracks outputs/snmot116.txt
+uv run eval-tracks data/SoccerNet/test/SNMOT-116 outputs/snmot116.txt
+```
+
+Passing a sequence directory rather than a file makes `eval-tracks` read `gameinfo.ini` and drop the ball tracklet, which is 6.3% of ground-truth rows on SNMOT-116 and unreachable for a person detector. Use `--exclude-roles` to change that; referees and goalkeepers are kept because a person detector can find them.
+
+`det/det.txt` holds the ground-truth boxes with track ids stripped, so feeding it to the tracker gives the association score under perfect detection.
+
 ## Performance profiling
 
 ```bash

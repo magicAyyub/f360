@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 run-match = "src.pipeline.run_match:run_cli"
 eval-tracks = "src.evaluation.cli:run_cli"
+run-sequence = "src.pipeline.run_sequence:run_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]

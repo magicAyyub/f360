@@ -59,3 +59,42 @@ def test_window_after_seek_is_exact(video_file):
     assert frames, "window should not be empty"
     assert frames[0].timestamp >= 1.0
     assert frames[-1].timestamp <= 1.5
+
+
+@pytest.fixture
+def image_sequence(tmp_path):
+    directory = tmp_path / 'img1'
+    directory.mkdir()
+    for i in range(1, 6):
+        cv2.imwrite(str(directory / f'{i:06d}.jpg'), np.full((48, 64, 3), i * 10, dtype=np.uint8))
+    return directory
+
+
+def test_image_sequence_reader(image_sequence):
+    from src.video import ImageSequenceReader
+
+    reader = ImageSequenceReader(image_sequence, fps=25.0)
+    assert len(reader) == 5
+    assert reader.fps == 25.0
+
+    frames = list(reader)
+    assert [f.frame_id for f in frames] == [0, 1, 2, 3, 4]
+    assert frames[4].timestamp == pytest.approx(4 / 25.0)
+    # Le tri lexicographique doit suivre l'ordre temporel des noms zéro-remplis
+    assert frames[0].image.mean() < frames[4].image.mean()
+
+
+def test_image_sequence_composes_with_sampler(image_sequence):
+    from src.video import FrameSampler, ImageSequenceReader
+
+    sampler = FrameSampler(ImageSequenceReader(image_sequence, fps=25.0), stride=2)
+    assert sampler.fps == pytest.approx(12.5)
+    assert [f.frame_id for f in sampler] == [0, 2, 4]
+
+
+def test_image_sequence_rejects_empty_dir(tmp_path):
+    from src.video import ImageSequenceReader
+
+    (tmp_path / 'empty').mkdir()
+    with pytest.raises(FileNotFoundError):
+        ImageSequenceReader(tmp_path / 'empty', fps=25.0)

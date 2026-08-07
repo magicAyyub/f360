@@ -1,9 +1,13 @@
+from pathlib import Path
+
+import numpy as np
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from .metrics import evaluate
 from .mot import load_mot
+from .soccernet import load_sequence
 
 app = typer.Typer(help="Score tracker output against ground truth")
 
@@ -19,16 +23,31 @@ GROUPS = (
 )
 
 
+def _load_ground_truth(path: str, exclude_roles: str) -> tuple[np.ndarray, str]:
+    """Accept either a MOT file or a SoccerNet sequence directory."""
+    if not Path(path).is_dir():
+        return load_mot(path), Path(path).name
+
+    sequence = load_sequence(path)
+    roles = tuple(r.strip() for r in exclude_roles.split(',') if r.strip())
+    rows = sequence.ground_truth(exclude_roles=roles)
+    excluded = {tid for tid, role in sequence.roles.items() if role in roles}
+    return rows, f"{sequence.name} (excluded {len(excluded)} tracklets: {', '.join(roles) or 'none'})"
+
+
 @app.command()
 def cli(
-    ground_truth: str = typer.Argument(..., help='MOTChallenge ground truth file'),
+    ground_truth: str = typer.Argument(..., help='MOTChallenge file, or a SoccerNet sequence directory'),
     predictions: str = typer.Argument(..., help='MOTChallenge predictions file'),
     iou_threshold: float = typer.Option(0.5, help='IoU required for a match in the CLEAR metrics'),
+    exclude_roles: str = typer.Option('ball', help='Roles to drop when ground truth is a sequence directory'),
 ) -> None:
-    """Compare two MOTChallenge files and print the tracking metrics."""
-    result = evaluate(load_mot(ground_truth), load_mot(predictions), iou_threshold=iou_threshold)
+    """Compare predictions against ground truth and print the tracking metrics."""
+    gt, label = _load_ground_truth(ground_truth, exclude_roles)
+    result = evaluate(gt, load_mot(predictions), iou_threshold=iou_threshold)
     scores = result.as_dict()
 
+    Console().print(f"[dim]ground truth:[/dim] {label}")
     table = Table(title=f"Tracking metrics (IoU >= {iou_threshold})", header_style="bold magenta")
     table.add_column("Metric", style="dim", width=24)
     table.add_column("Value", justify="right", width=12)

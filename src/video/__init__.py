@@ -1,4 +1,4 @@
 from .frame import Frame
-from .reader import VideoReader, FrameSampler, TimeWindowFilter
+from .reader import FrameSampler, ImageSequenceReader, TimeWindowFilter, VideoReader
 
-__all__ = ['Frame', 'VideoReader', 'FrameSampler', 'TimeWindowFilter']
+__all__ = ['Frame', 'VideoReader', 'ImageSequenceReader', 'FrameSampler', 'TimeWindowFilter']

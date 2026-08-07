@@ -1,4 +1,5 @@
 import cv2
+from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
 from .frame import Frame
@@ -55,6 +56,40 @@ class VideoReader:
             frame_id += 1
 
         cap.release()
+
+
+class ImageSequenceReader:
+    """Iterable over a folder of numbered frames, the layout MOT datasets ship.
+
+    The frame rate is not discoverable from the files, so it comes from the
+    caller, usually out of the dataset's own seqinfo.
+    """
+
+    def __init__(self, image_dir: str | Path, fps: float, extension: str = '.jpg'):
+        if fps <= 0:
+            raise ValueError("fps must be positive")
+
+        self.image_dir = Path(image_dir)
+        self._fps = fps
+        self.paths = sorted(self.image_dir.glob(f'*{extension}'))
+
+        if not self.paths:
+            raise FileNotFoundError(f"no '{extension}' frames in {self.image_dir}")
+
+    @property
+    def fps(self) -> float:
+        return self._fps
+
+    def __len__(self) -> int:
+        return len(self.paths)
+
+    def __iter__(self) -> Iterator[Frame]:
+        for index, path in enumerate(self.paths):
+            image = cv2.imread(str(path))
+            if image is None:
+                raise ValueError(f"could not read frame {path}")
+
+            yield Frame(frame_id=index, timestamp=index / self._fps, image=image)
 
 
 class FrameSampler:
