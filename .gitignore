@@ -10,5 +10,5 @@ wheels/
 .venv
 
 data/
-outputs/*.mp4
+outputs/
 models/*.pt
