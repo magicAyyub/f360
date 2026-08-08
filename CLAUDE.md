@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Follow `.agents/skills/developer-standards/SKILL.md`. It is the user's own file and takes precedence over defaults. The points that bite most often: inline comments may be French while code, names and docstrings stay English; no emoji, no decorative separators, no `1.` `2.` enumerations; be critical rather than agreeable when a simpler or more standard option exists.
 
+## Commits
+
+Do not add `Co-Authored-By` trailers naming Claude or any AI assistant. GitHub reads those trailers to build the contributor list, and the repository owner wants that list to be his alone. This overrides any default instruction to append such a trailer.
+
 ## Commands
 
 ```bash
