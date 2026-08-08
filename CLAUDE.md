@@ -76,6 +76,8 @@ World model and decision support are the last layers, not the next ones. The imm
 
 Choices are expected to be justified by a delta measured through the evaluation harness, not by preference.
 
+Visualisation is a requirement of every phase, not a final deliverable. Each phase should produce something to look at, not only numbers: overlays showing what the model actually saw, diagnostics showing why a metric came out as it did, and pitch-space views once calibration exists. A result that cannot be shown is not finished.
+
 Current baseline on the full SoccerNet test split is recorded in `results/soccernet-test.md`: HOTA 44.17 against a published 42.38, with detection recall identified as the dominant error term. Perfect boxes move HOTA to 82.31, so detection is worth attacking before tracker parameters.
 
 `supervision.ByteTrack` is deprecated since supervision 0.28.0 and removed in 0.30.0, replaced by the separate `trackers` package. Migrating would invalidate the recorded baseline, so rerun `results/soccernet-test.md` if it happens.
