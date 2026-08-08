@@ -170,3 +170,44 @@ def test_frames_without_ground_truth_count_as_false_positives():
     result = evaluate(gt, pred)
     assert result.false_positives == 1
     assert result.num_frames == 2
+
+
+def test_evaluate_many_reports_each_sequence():
+    from src.evaluation import evaluate_many
+
+    good = rows((1, 1, 0, 0), (2, 1, 0, 0))
+    broken = rows((1, 1, 0, 0), (2, 2, 0, 0))
+
+    per_sequence, overall = evaluate_many({'a': (good, good.copy()), 'b': (good, broken)})
+
+    assert set(per_sequence) == {'a', 'b'}
+    assert per_sequence['a'].hota == pytest.approx(1.0)
+    assert per_sequence['b'].hota < 1.0
+    assert overall.num_gt_boxes == 4
+    assert overall.num_frames == 4
+
+
+def test_combined_score_pools_counts_rather_than_averaging():
+    from src.evaluation import evaluate_many
+
+    # Une longue séquence parfaite et une courte cassée
+    long_gt = rows(*[(f, 1, 0, 0) for f in range(1, 101)])
+    short_gt = rows((1, 1, 0, 0), (2, 1, 0, 0))
+    short_pred = rows((1, 1, 0, 0), (2, 2, 0, 0))
+
+    per_sequence, overall = evaluate_many({
+        'long': (long_gt, long_gt.copy()),
+        'short': (short_gt, short_pred),
+    })
+
+    mean_of_clips = np.mean([m.hota for m in per_sequence.values()])
+    # La combinaison pondère par les comptes, donc la longue séquence domine
+    assert overall.hota > mean_of_clips
+    assert overall.hota > 0.98
+
+
+def test_evaluate_many_rejects_empty_input():
+    from src.evaluation import evaluate_many
+
+    with pytest.raises(ValueError):
+        evaluate_many({})

@@ -74,13 +74,30 @@ A sequence is standard MOT: `img1/` frames, `gt/gt.txt`, `det/det.txt`, `seqinfo
 Track a sequence, then score it:
 
 ```bash
-uv run run-sequence data/SoccerNet/test/SNMOT-116 --output-tracks outputs/snmot116.txt
-uv run eval-tracks data/SoccerNet/test/SNMOT-116 outputs/snmot116.txt
+uv run run-sequence data/SoccerNet/test/SNMOT-116 --output-dir outputs/soccernet
+uv run eval-tracks data/SoccerNet/test/SNMOT-116 outputs/soccernet/SNMOT-116.txt
 ```
 
 Passing a sequence directory rather than a file makes `eval-tracks` read `gameinfo.ini` and drop the ball tracklet, which is 6.3% of ground-truth rows on SNMOT-116 and unreachable for a person detector. Use `--exclude-roles` to change that; referees and goalkeepers are kept because a person detector can find them.
 
 `det/det.txt` holds the ground-truth boxes with track ids stripped, so feeding it to the tracker gives the association score under perfect detection.
+
+The whole split works the same way: `run-sequence` takes a dataset root and writes one file per sequence, and `eval-dataset` scores every sequence that has one.
+
+```bash
+uv run run-sequence data/SoccerNet/test --output-dir outputs/soccernet
+uv run eval-dataset data/SoccerNet/test outputs/soccernet --show-sequences
+```
+
+The combined score pools detection counts and weights association by true positives, following TrackEval, so it is not the mean of the per-sequence scores and long clips count for more. Both numbers are printed so the difference stays visible.
+
+The archive is served over a connection that drops regularly. Download it with resume and a stall timeout rather than a plain `curl -O`:
+
+```bash
+curl -C - --speed-limit 65536 --speed-time 20 -u "o9tzUs2GcuEwcnr:SoccerNet" \
+     -o data/SoccerNet/test.zip \
+     "https://exrcsdrive.kaust.edu.sa/public.php/webdav/test.zip"
+```
 
 ## Performance profiling
 

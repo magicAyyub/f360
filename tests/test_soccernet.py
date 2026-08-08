@@ -99,3 +99,26 @@ def test_missing_game_info_leaves_roles_empty(sequence_dir):
     assert sequence.roles == {}
     # Sans rôles connus, rien ne peut être filtré
     assert len(sequence.ground_truth()) == 6
+
+
+def test_find_sequences_accepts_a_single_sequence(sequence_dir):
+    from src.pipeline.run_sequence import find_sequences
+
+    assert find_sequences(sequence_dir) == [sequence_dir]
+
+
+def test_find_sequences_accepts_a_dataset_root(sequence_dir):
+    from src.pipeline.run_sequence import find_sequences
+
+    root = sequence_dir.parent
+    (root / 'not-a-sequence').mkdir()
+
+    assert find_sequences(root) == [sequence_dir]
+
+
+def test_find_sequences_rejects_empty_root(tmp_path):
+    from src.pipeline.run_sequence import find_sequences
+
+    (tmp_path / 'empty').mkdir()
+    with pytest.raises(FileNotFoundError):
+        find_sequences(tmp_path / 'empty')

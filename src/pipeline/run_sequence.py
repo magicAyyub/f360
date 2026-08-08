@@ -1,4 +1,5 @@
-from typing import Optional
+from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 import typer
@@ -9,55 +10,72 @@ from src.evaluation.soccernet import load_sequence
 from src.tracking import ByteTrackTracker
 from src.video import ImageSequenceReader
 
-app = typer.Typer(help="Run detection and tracking over a MOT-format image sequence")
+app = typer.Typer(help="Run detection and tracking over MOT-format image sequences")
 
 PERSON_CLASS = 0
 
 
-def run(
-    sequence_dir: str,
-    output_tracks: str,
-    conf: float = 0.25,
-    limit: Optional[int] = None,
-) -> None:
-    """Track a SoccerNet sequence and write predictions in MOTChallenge format.
+def find_sequences(path: Path) -> List[Path]:
+    """Accept either one sequence directory or a dataset root holding many."""
+    if (path / 'seqinfo.ini').exists():
+        return [path]
 
-    No play-phase filtering here: these clips are already continuous play, and
-    dropping frames would break alignment with the ground truth.
+    found = sorted(child for child in path.iterdir() if (child / 'seqinfo.ini').exists())
+    if not found:
+        raise FileNotFoundError(f"no sequence with seqinfo.ini under {path}")
+    return found
+
+
+def track_sequence(sequence_dir: Path, detector: YoloDetector, limit: Optional[int] = None) -> np.ndarray:
+    """Track one sequence and return its MOT rows.
+
+    No play-phase filtering: these clips are continuous play already, and dropping
+    frames would break alignment with the ground truth.
     """
     sequence = load_sequence(sequence_dir)
     reader = ImageSequenceReader(sequence.image_dir, fps=sequence.fps)
 
-    print(f'{sequence.name}: {len(reader)} frames, {sequence.width}x{sequence.height} @ {sequence.fps:g} fps')
-    print(f'tracklet roles: {sequence.role_counts()}')
-
-    detector = YoloDetector(conf=conf, classes=[PERSON_CLASS])
+    # Un tracker neuf par séquence: les clips sont indépendants
     tracker = ByteTrackTracker(frame_rate=sequence.fps)
 
     rows = []
     for frame_number, frame in enumerate(reader, start=1):
         if limit is not None and frame_number > limit:
             break
+        rows.append(tracks_to_mot(frame_number, tracker.update(detector.predict(frame.image))))
 
-        tracks = tracker.update(detector.predict(frame.image))
-        rows.append(tracks_to_mot(frame_number, tracks))
+    return np.vstack(rows) if rows else np.zeros((0, 7))
 
-        if frame_number % 100 == 0:
-            print(f'  {frame_number} frames')
 
-    stacked = np.vstack(rows) if rows else np.zeros((0, 7))
-    save_mot(stacked, output_tracks)
-    print(f'Wrote {len(stacked)} track rows to: {output_tracks}')
+def run(
+    path: str,
+    output_dir: str,
+    conf: float = 0.25,
+    limit: Optional[int] = None,
+) -> None:
+    sequences = find_sequences(Path(path))
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    # Un seul chargement de modèle pour tout le lot
+    detector = YoloDetector(conf=conf, classes=[PERSON_CLASS])
+    print(f'{len(sequences)} sequence(s) to process, writing to {destination}')
+
+    for index, sequence_dir in enumerate(sequences, start=1):
+        rows = track_sequence(sequence_dir, detector, limit=limit)
+        output = destination / f'{sequence_dir.name}.txt'
+        save_mot(rows, output)
+        print(f'  [{index}/{len(sequences)}] {sequence_dir.name}: {len(rows)} rows -> {output}')
 
 
 @app.command()
 def cli(
-    sequence_dir: str = typer.Argument(..., help='Sequence directory containing seqinfo.ini and img1'),
-    output_tracks: str = typer.Option(..., help='Path to write MOTChallenge predictions'),
+    path: str = typer.Argument(..., help='A sequence directory, or a dataset root containing several'),
+    output_dir: str = typer.Option(..., help='Directory to write one MOTChallenge file per sequence'),
     conf: float = typer.Option(0.25, help='Detector confidence threshold'),
-    limit: Optional[int] = typer.Option(None, help='Stop after this many frames'),
+    limit: Optional[int] = typer.Option(None, help='Stop each sequence after this many frames'),
 ) -> None:
-    run(sequence_dir=sequence_dir, output_tracks=output_tracks, conf=conf, limit=limit)
+    run(path=path, output_dir=output_dir, conf=conf, limit=limit)
 
 
 def run_cli() -> None:

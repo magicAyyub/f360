@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 import motmetrics as mm
 import numpy as np
@@ -77,8 +77,12 @@ def _dense_ids(rows_by_frame: Dict[int, np.ndarray], frames: np.ndarray) -> Tupl
     return per_frame, len(lookup)
 
 
-def evaluate(gt: np.ndarray, pred: np.ndarray, iou_threshold: float = 0.5) -> TrackingMetrics:
-    """Score predicted tracks against ground truth, both in MOT row format."""
+CLEAR_METRICS = ['mota', 'motp', 'idf1', 'precision', 'recall',
+                 'num_switches', 'num_false_positives', 'num_misses']
+
+
+def _prepare(gt: np.ndarray, pred: np.ndarray, iou_threshold: float):
+    """Build the per-sequence intermediates both metric families consume."""
     gt = np.asarray(gt, dtype=float).reshape(-1, len(COLUMNS))
     pred = np.asarray(pred, dtype=float).reshape(-1, len(COLUMNS))
 
@@ -91,30 +95,7 @@ def evaluate(gt: np.ndarray, pred: np.ndarray, iou_threshold: float = 0.5) -> Tr
         for f in frames
     ]
 
-    clear = _clear_metrics(gt_by_frame, pred_by_frame, frames, similarities, iou_threshold)
-    hota = _hota_metrics(gt_by_frame, pred_by_frame, frames, similarities)
-
-    return TrackingMetrics(
-        hota=hota['HOTA'],
-        deta=hota['DetA'],
-        assa=hota['AssA'],
-        mota=clear['mota'],
-        motp=clear['motp'],
-        idf1=clear['idf1'],
-        precision=clear['precision'],
-        recall=clear['recall'],
-        id_switches=clear['id_switches'],
-        false_positives=clear['false_positives'],
-        misses=clear['misses'],
-        num_gt_boxes=len(gt),
-        num_pred_boxes=len(pred),
-        num_frames=len(frames),
-    )
-
-
-def _clear_metrics(gt_by_frame, pred_by_frame, frames, similarities, iou_threshold) -> Dict[str, float]:
     accumulator = mm.MOTAccumulator(auto_id=False)
-
     for index, frame in enumerate(frames):
         # motmetrics raisonne en distance: 1 - IoU, et écarte tout ce qui dépasse le seuil
         distances = 1.0 - similarities[index]
@@ -127,31 +108,10 @@ def _clear_metrics(gt_by_frame, pred_by_frame, frames, similarities, iou_thresho
             frameid=int(frame),
         )
 
-    summary = mm.metrics.create().compute(
-        accumulator,
-        metrics=['mota', 'motp', 'idf1', 'precision', 'recall',
-                 'num_switches', 'num_false_positives', 'num_misses'],
-    ).iloc[0]
-
-    motp = summary['motp']
-    return {
-        'mota': float(summary['mota']),
-        # motp sort en distance moyenne, on le rend en IoU pour rester lisible
-        'motp': float(1.0 - motp) if np.isfinite(motp) else 0.0,
-        'idf1': float(summary['idf1']),
-        'precision': float(summary['precision']),
-        'recall': float(summary['recall']),
-        'id_switches': int(summary['num_switches']),
-        'false_positives': int(summary['num_false_positives']),
-        'misses': int(summary['num_misses']),
-    }
-
-
-def _hota_metrics(gt_by_frame, pred_by_frame, frames, similarities) -> Dict[str, float]:
     gt_ids, num_gt_ids = _dense_ids(gt_by_frame, frames)
     pred_ids, num_pred_ids = _dense_ids(pred_by_frame, frames)
 
-    scores = HOTA().eval_sequence({
+    hota_raw = HOTA().eval_sequence({
         'num_timesteps': len(frames),
         'num_gt_ids': num_gt_ids,
         'num_tracker_ids': num_pred_ids,
@@ -162,5 +122,76 @@ def _hota_metrics(gt_by_frame, pred_by_frame, frames, similarities) -> Dict[str,
         'similarity_scores': similarities,
     })
 
-    # HOTA sort un tableau par seuil de localisation, le scalaire publié est la moyenne
-    return {key: float(np.mean(scores[key])) for key in ('HOTA', 'DetA', 'AssA')}
+    counts = {
+        'num_gt_boxes': len(gt),
+        'num_pred_boxes': len(pred),
+        'num_frames': len(frames),
+    }
+    return accumulator, hota_raw, counts
+
+
+def _summarise(clear_row, hota_raw: Dict[str, np.ndarray], counts: Dict[str, int]) -> TrackingMetrics:
+    motp = clear_row['motp']
+    return TrackingMetrics(
+        # HOTA sort un tableau par seuil de localisation, le scalaire publié est la moyenne
+        hota=float(np.mean(hota_raw['HOTA'])),
+        deta=float(np.mean(hota_raw['DetA'])),
+        assa=float(np.mean(hota_raw['AssA'])),
+        mota=float(clear_row['mota']),
+        # motp sort en distance moyenne, on le rend en IoU pour rester lisible
+        motp=float(1.0 - motp) if np.isfinite(motp) else 0.0,
+        idf1=float(clear_row['idf1']),
+        precision=float(clear_row['precision']),
+        recall=float(clear_row['recall']),
+        id_switches=int(clear_row['num_switches']),
+        false_positives=int(clear_row['num_false_positives']),
+        misses=int(clear_row['num_misses']),
+        **counts,
+    )
+
+
+def evaluate(gt: np.ndarray, pred: np.ndarray, iou_threshold: float = 0.5) -> TrackingMetrics:
+    """Score predicted tracks against ground truth, both in MOT row format."""
+    accumulator, hota_raw, counts = _prepare(gt, pred, iou_threshold)
+
+    summary = mm.metrics.create().compute(accumulator, metrics=CLEAR_METRICS).iloc[0]
+    return _summarise(summary, hota_raw, counts)
+
+
+def evaluate_many(
+    sequences: Mapping[str, Tuple[np.ndarray, np.ndarray]],
+    iou_threshold: float = 0.5,
+) -> Tuple[Dict[str, TrackingMetrics], TrackingMetrics]:
+    """Score several sequences and combine them the way the benchmarks do.
+
+    The combined score is not the mean of the per-sequence scores: TrackEval sums
+    the underlying detection counts and weights association by true positives, so
+    long sequences carry more weight. Averaging would give a different number that
+    matches no published table.
+    """
+    if not sequences:
+        raise ValueError("no sequences to evaluate")
+
+    names = list(sequences)
+    prepared = {name: _prepare(*sequences[name], iou_threshold) for name in names}
+
+    summaries = mm.metrics.create().compute_many(
+        [prepared[name][0] for name in names],
+        names=names,
+        metrics=CLEAR_METRICS,
+        generate_overall=True,
+    )
+
+    per_sequence = {
+        name: _summarise(summaries.loc[name], prepared[name][1], prepared[name][2])
+        for name in names
+    }
+
+    combined_hota = HOTA().combine_sequences({name: prepared[name][1] for name in names})
+    total_counts = {
+        key: sum(prepared[name][2][key] for name in names)
+        for key in ('num_gt_boxes', 'num_pred_boxes', 'num_frames')
+    }
+    overall = _summarise(summaries.loc['OVERALL'], combined_hota, total_counts)
+
+    return per_sequence, overall
