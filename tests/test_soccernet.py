@@ -122,3 +122,25 @@ def test_find_sequences_rejects_empty_root(tmp_path):
     (tmp_path / 'empty').mkdir()
     with pytest.raises(FileNotFoundError):
         find_sequences(tmp_path / 'empty')
+
+
+def test_oracle_tracking_uses_ground_truth_boxes(sequence_dir):
+    from src.pipeline.run_sequence import track_sequence
+
+    rows = track_sequence(sequence_dir, detector=None, oracle=True)
+
+    # Chaque boîte produite doit venir de la vérité terrain, jamais du ballon
+    produced = {tuple(row) for row in rows[:, 2:6]}
+    ball_box = (300.0, 300.0, 5.0, 5.0)
+    assert ball_box not in produced
+
+    truth = {tuple(row) for row in load_sequence(sequence_dir).ground_truth()[:, 2:6]}
+    assert produced <= truth
+
+
+def test_oracle_tracking_needs_no_images(sequence_dir):
+    from src.pipeline.run_sequence import track_sequence
+
+    # img1 est vide dans la fixture: le mode oracle ne doit pas la lire
+    assert not list((sequence_dir / 'img1').iterdir())
+    assert len(track_sequence(sequence_dir, detector=None, oracle=True)) > 0
