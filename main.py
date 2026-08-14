@@ -1,6 +1,6 @@
 import cv2 as cv
 
-from src.video.reader import FrameSampler, TimeWindowFilter, VideoReader
+from src.reader import FrameSampler, TimeWindowFilter, VideoReader
 
 video_path = 'data/PSG_vs_Bayern_Munchen.mp4'
 print('reading the video file...')

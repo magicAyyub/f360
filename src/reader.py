@@ -1,11 +1,15 @@
 import cv2
+import numpy as np
 from typing import Iterable, Iterator, Optional, Tuple
-
-from .frame import Frame
-
+from dataclasses import dataclass
 
 Size = Tuple[int, int]
 
+@dataclass
+class Frame:
+    frame_id: int
+    timestamp: float
+    image: np.ndarray
 
 class VideoReader:
     """Iterable wrapper around a video file, yielding frames with timestamps."""
