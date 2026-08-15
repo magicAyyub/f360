@@ -1,21 +1,16 @@
-import cv2 as cv
-
 from src.reader import VideoReader
+from src.shot_detector import ShotDetector, save_shots
 
-video_path = 'data/PSG_vs_Bayern_Munchen.mp4'
-print('reading the video file...')
+VIDEO_PATH = 'data/PSG_vs_Bayern_Munchen.mp4'
+OUTPUT_PATH = 'outputs/shots.json'
+START_TIME = 300.0
+END_TIME = 360.0
 
-reader = VideoReader(
-    video_path,
-    start_time=300.0,
-    end_time=360.0,
-    stride=2,
-    resize=(1280, 720),
-)
+reader = VideoReader(VIDEO_PATH, start_time=START_TIME, end_time=END_TIME)
+detector = ShotDetector()
 
-for frame in reader:
-    cv.imshow('Video', frame.image)
-    if cv.waitKey(int(1000 / 30)) & 0xFF == 27:
-        break
+print(f'detecting shot boundaries on [{START_TIME:.0f}s, {END_TIME:.0f}s] using {detector.device}...')
+shots = detector.detect(reader)
 
-cv.destroyAllWindows()
+save_shots(shots, OUTPUT_PATH, video_path=VIDEO_PATH)
+print(f'{len(shots)} shots written to {OUTPUT_PATH}')

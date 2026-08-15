@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-run-match = "src.pipeline.run_match:run_cli"
+clips = "src.clips:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
