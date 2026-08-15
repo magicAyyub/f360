@@ -1,11 +1,11 @@
 import json
-import shutil
 import subprocess
 import typer
 from pathlib import Path
 from rich.progress import Progress
 from typing import Callable, List, Optional
 
+from src import ffmpeg
 from src.config import DEFAULTS, resolve
 
 CLIP_DIR = Path(DEFAULTS["clip_dir"])
@@ -22,7 +22,7 @@ def export_clips(
 
     `progress` is called with 1 after each clip.
     """
-    _require_ffmpeg()
+    ffmpeg.require()
 
     data = json.loads(Path(shots_path).read_text())
     source = video_path or data.get("video")
@@ -58,11 +58,6 @@ def clear_clips(output_dir: Path = CLIP_DIR) -> int:
         clip.unlink()
 
     return len(clips)
-
-
-def _require_ffmpeg() -> None:
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError("ffmpeg not found in PATH, install it first (brew install ffmpeg)")
 
 
 def _cut(source: str, start: float, duration: float, destination: Path) -> None:

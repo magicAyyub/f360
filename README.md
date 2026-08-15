@@ -33,7 +33,9 @@ uv run f360 clean       # delete them
 
 `uv run f360 --help` lists them, and `--help` on any of them lists its options.
 
-Detection takes roughly 30 seconds of compute per minute of video.
+Detection costs roughly 15 seconds of compute per minute of video, and holds a constant amount of
+memory whatever the length, so a full match is around 20 minutes of compute rather than something
+that has to be cut into pieces.
 
 Both commands read their settings from `config.yaml`, so the usual run needs no arguments. Any
 option given on the command line wins over the file, which is handy for trying something out
@@ -73,9 +75,14 @@ those frames show both shots at once and would pollute whichever clip they lande
 
 ## Things worth knowing
 
-Frames must be consecutive. `VideoReader` accepts a `stride`, but feeding a strided stream to the
-detector fabricates cuts everywhere, since the model reads a transition as an abrupt change between
-neighbouring frames. Detection always runs at `stride=1`.
+Frames must be consecutive. The model reads a transition as an abrupt change between neighbouring
+frames, so skipping frames fabricates cuts everywhere. `VideoReader` accepts a `stride` for other
+uses, but the detector is never fed one.
+
+Detection decodes through ffmpeg rather than OpenCV. The model works on 48x27 images, and asking
+ffmpeg to scale while decoding is about twelve times faster than decoding full frames and shrinking
+them afterwards, which used to be more than half the total time. Only one window of a hundred
+frames is kept at a time, so memory does not grow with the length of the video.
 
 Boundaries are accurate to within one frame. The model flags the frames it considers part of the
 transition and we drop them, but it can miss a frame that is only faintly blended, in which case a
@@ -90,8 +97,9 @@ cut to the nearest keyframe, which throws away the precision above.
 
 ## Layout
 
-- `src/reader.py` reads a video, optionally within a time window, with seeking rather than decoding
-  and discarding everything before the start.
+- `src/reader.py` reads a video within a time window, seeking rather than decoding and discarding
+  everything before the start. `VideoReader` yields real frames, `ScaledVideoReader` yields small
+  ones straight out of ffmpeg and feeds the detector.
 - `src/shot_detector.py` runs TransNetV2 and turns per-frame transition probabilities into shots.
 - `src/detect.py` and `src/clips.py` hold the command functions, `src/cli.py` registers them.
 - `src/config.py` merges `config.yaml` with the built-in defaults.

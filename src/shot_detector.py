@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from src.reader import Frame
 from src.vendor.transnetv2_pytorch import TransNetV2
@@ -63,57 +63,55 @@ class ShotDetector:
         self.model.eval().to(self.device)
 
     def detect(self, frames: Iterable[Frame]) -> List[Shot]:
-        """Collect, analyse and segment in one go. The three steps are public if you
-        need to report progress between them."""
-        images, timeline = self.collect(frames)
-        probabilities = self.predict(images)
+        probabilities, timeline = self.predict(frames)
         return self.to_shots(probabilities, timeline)
 
-    def predict(self, images: np.ndarray, progress: Optional[Callable[[int], None]] = None) -> np.ndarray:
-        """Per-frame transition probability for an array of [N, 27, 48, 3] RGB frames.
+    def predict(self, frames: Iterable[Frame]) -> Tuple[np.ndarray, List[Tuple[int, float]]]:
+        """Transition probability per frame, computed as the frames arrive.
 
-        `progress` is called after each window with the number of frames covered.
+        Only one window is ever held in memory, so a full match costs no more
+        than a one minute extract.
         """
-        padded = self._pad(images)
+        window, timeline, probabilities = [], [], []
+        emitted = 0
 
-        probabilities = []
-        with torch.no_grad():
-            for start in range(0, len(padded) - WINDOW_SIZE + 1, WINDOW_STEP):
-                window = torch.from_numpy(padded[start:start + WINDOW_SIZE]).unsqueeze(0)
-                single_frame_pred, _ = self.model(window.to(self.device))
-
-                center = torch.sigmoid(single_frame_pred)[0, WINDOW_CONTEXT:-WINDOW_CONTEXT, 0]
-                probabilities.append(center.cpu().numpy())
-
-                if progress is not None:
-                    progress(WINDOW_STEP)
-
-        return np.concatenate(probabilities)[:len(images)]
-
-    def collect(self, frames: Iterable[Frame]) -> Tuple[np.ndarray, List[Tuple[int, float]]]:
-        """Downscale the frames to what the model expects, keeping their timing aside."""
-        images, timeline = [], []
         for frame in frames:
-            small = cv2.resize(frame.image, MODEL_INPUT_SIZE, interpolation=cv2.INTER_AREA)
-            images.append(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+            image = self._prepare(frame.image)
+            if not timeline:
+                # Contexte gauche de la premiere fenetre: la frame initiale repetee.
+                window.extend([image] * WINDOW_CONTEXT)
+
+            window.append(image)
             timeline.append((frame.frame_id, frame.timestamp))
 
-        if not images:
+            if len(window) == WINDOW_SIZE:
+                probabilities.append(self._run(window))
+                del window[:WINDOW_STEP]
+                emitted += WINDOW_STEP
+
+        if not timeline:
             raise ValueError("no frame to analyse")
 
-        return np.stack(images), timeline
+        # Contexte droit, meme principe, jusqu'a couvrir les frames encore en attente.
+        while emitted < len(timeline):
+            window.extend([window[-1]] * (WINDOW_SIZE - len(window)))
+            probabilities.append(self._run(window))
+            del window[:WINDOW_STEP]
+            emitted += WINDOW_STEP
+
+        return np.concatenate(probabilities)[:len(timeline)], timeline
+
+    def _run(self, window: List[np.ndarray]) -> np.ndarray:
+        """Probabilities for the 50 frames sitting at the centre of one window."""
+        batch = torch.from_numpy(np.stack(window)).unsqueeze(0)
+        with torch.no_grad():
+            single_frame_pred, _ = self.model(batch.to(self.device))
+            return torch.sigmoid(single_frame_pred)[0, WINDOW_CONTEXT:-WINDOW_CONTEXT, 0].cpu().numpy()
 
     @staticmethod
-    def _pad(images: np.ndarray) -> np.ndarray:
-        """Repeat the first and last frame so every frame gets a full context window."""
-        remainder = len(images) % WINDOW_STEP
-        tail = WINDOW_CONTEXT + (WINDOW_STEP - remainder if remainder else 0)
-
-        return np.concatenate([
-            np.repeat(images[:1], WINDOW_CONTEXT, axis=0),
-            images,
-            np.repeat(images[-1:], tail, axis=0),
-        ])
+    def _prepare(image: np.ndarray) -> np.ndarray:
+        small = cv2.resize(image, MODEL_INPUT_SIZE, interpolation=cv2.INTER_AREA)
+        return cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
 
     def to_shots(self, probabilities: np.ndarray, timeline: List[Tuple[int, float]]) -> List[Shot]:
         """Turn per-frame probabilities into the shots between the transitions."""
