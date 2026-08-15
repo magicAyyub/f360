@@ -13,6 +13,7 @@ DEFAULTS: Dict[str, Any] = {
     "weights": "models/transnetv2/transnetv2-pytorch-weights.pth",
     "shots_path": "outputs/shots.json",
     "clip_dir": "outputs/clips",
+    "labels_path": "outputs/labels.json",
 }
 
 
