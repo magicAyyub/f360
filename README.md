@@ -25,23 +25,29 @@ curl -L -o models/transnetv2/transnetv2-pytorch-weights.pth \
 Every command below is prefixed with `uv run`, which runs it inside the project environment without
 having to activate anything. If you already have the venv activated, drop the prefix.
 
-Detection. Edit the video path and time window at the top of `main.py`, then:
-
 ```bash
-uv run python main.py
+uv run f360 detect      # writes outputs/shots.json
+uv run f360 export      # one mp4 per shot in outputs/clips
+uv run f360 clean       # delete them
 ```
 
-It writes `outputs/shots.json`. Expect roughly 30 seconds of compute per minute of video.
+`uv run f360 --help` lists them, and `--help` on any of them lists its options.
 
-Cutting. Once the JSON exists:
+Detection takes roughly 30 seconds of compute per minute of video.
+
+Both commands read their settings from `config.yaml`, so the usual run needs no arguments. Any
+option given on the command line wins over the file, which is handy for trying something out
+without editing it:
 
 ```bash
-uv run clips export     # one mp4 per shot in outputs/clips
-uv run clips clean      # delete them
+uv run f360 detect --start-time 330 --end-time 345 --threshold 0.3
 ```
 
-The `clips` command comes from `pyproject.toml` and is created when the project is installed. If it
-is not found, run `uv sync` again, or fall back to `uv run python -m src.clips export`.
+Use `--config` to point at another settings file. A key the file does not know about is an error
+rather than a silent no-op, so a typo shows up immediately.
+
+The `f360` command comes from `pyproject.toml` and is created when the project is installed. If it
+is not found, run `uv sync` again, or fall back to `uv run python -m src.cli`.
 
 ## Reading the output
 
@@ -73,8 +79,8 @@ neighbouring frames. Detection always runs at `stride=1`.
 
 Boundaries are accurate to within one frame. The model flags the frames it considers part of the
 transition and we drop them, but it can miss a frame that is only faintly blended, in which case a
-clip keeps a slightly contaminated frame at its edge. Lowering `threshold` on `ShotDetector` widens
-what counts as a transition, at the cost of trimming clean frames.
+clip keeps a slightly contaminated frame at its edge. Lowering `threshold` widens what counts as a
+transition, at the cost of trimming clean frames.
 
 Timestamps assume a constant frame rate, since they are computed as `frame_id / fps`. On a variable
 frame rate file they would drift, and the frame numbers would be the only reliable bounds.
@@ -87,5 +93,6 @@ cut to the nearest keyframe, which throws away the precision above.
 - `src/reader.py` reads a video, optionally within a time window, with seeking rather than decoding
   and discarding everything before the start.
 - `src/shot_detector.py` runs TransNetV2 and turns per-frame transition probabilities into shots.
-- `src/clips.py` cuts and cleans the clips.
+- `src/detect.py` and `src/clips.py` hold the command functions, `src/cli.py` registers them.
+- `src/config.py` merges `config.yaml` with the built-in defaults.
 - `src/vendor/` holds the TransNetV2 model definition, copied unchanged from the official repo.

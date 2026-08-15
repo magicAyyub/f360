@@ -49,9 +49,7 @@ class VideoReader:
             raise IOError(f"cannot open video file: {self.video_path}")
 
         try:
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            fps = fps if fps > 0 else DEFAULT_FPS
-
+            fps = _read_fps(cap)
             start_frame = int(self.start_time * fps)
             end_frame = int(self.end_time * fps) if self.end_time is not None else None
 
@@ -82,5 +80,36 @@ class VideoReader:
         finally:
             cap.release()
 
+    @property
+    def fps(self) -> float:
+        return self._probe()[0]
+
+    @property
+    def frame_count(self) -> int:
+        """How many frames this reader will yield, useful to size a progress bar."""
+        fps, total = self._probe()
+
+        first = int(self.start_time * fps)
+        last = total - 1
+        if self.end_time is not None:
+            last = min(int(self.end_time * fps), last)
+
+        return max(0, (last - first) // self.stride + 1)
+
+    def _probe(self) -> Tuple[float, int]:
+        cap = cv2.VideoCapture(self.video_path)
+        if not cap.isOpened():
+            raise IOError(f"cannot open video file: {self.video_path}")
+
+        try:
+            return _read_fps(cap), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        finally:
+            cap.release()
+
     def _resize(self, image: np.ndarray) -> np.ndarray:
         return cv2.resize(image, self.resize, interpolation=cv2.INTER_AREA)
+
+
+def _read_fps(cap: cv2.VideoCapture) -> float:
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    return fps if fps > 0 else DEFAULT_FPS

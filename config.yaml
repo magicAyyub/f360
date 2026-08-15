@@ -1,0 +1,19 @@
+# Settings shared by the `detect` and `clips` commands.
+# Every key here can be overridden by the matching command line option.
+
+video: data/PSG_vs_Bayern_Munchen.mp4
+
+# Portion of the video to analyse, in seconds. Leave end_time empty to go to the end.
+start_time: 300.0
+end_time: 360.0
+
+# Above this probability a frame is considered part of a transition.
+# Lower it to catch faint blends, at the cost of trimming clean frames.
+threshold: 0.5
+
+# cpu, mps or cuda. Leave empty to pick the best available.
+device:
+
+weights: models/transnetv2/transnetv2-pytorch-weights.pth
+shots_path: outputs/shots.json
+clip_dir: outputs/clips

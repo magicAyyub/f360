@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from src.reader import Frame
 from src.vendor.transnetv2_pytorch import TransNetV2
@@ -63,12 +63,17 @@ class ShotDetector:
         self.model.eval().to(self.device)
 
     def detect(self, frames: Iterable[Frame]) -> List[Shot]:
-        images, timeline = self._collect(frames)
+        """Collect, analyse and segment in one go. The three steps are public if you
+        need to report progress between them."""
+        images, timeline = self.collect(frames)
         probabilities = self.predict(images)
-        return self._to_shots(probabilities, timeline)
+        return self.to_shots(probabilities, timeline)
 
-    def predict(self, images: np.ndarray) -> np.ndarray:
-        """Per-frame transition probability for an array of [N, 27, 48, 3] RGB frames."""
+    def predict(self, images: np.ndarray, progress: Optional[Callable[[int], None]] = None) -> np.ndarray:
+        """Per-frame transition probability for an array of [N, 27, 48, 3] RGB frames.
+
+        `progress` is called after each window with the number of frames covered.
+        """
         padded = self._pad(images)
 
         probabilities = []
@@ -80,9 +85,13 @@ class ShotDetector:
                 center = torch.sigmoid(single_frame_pred)[0, WINDOW_CONTEXT:-WINDOW_CONTEXT, 0]
                 probabilities.append(center.cpu().numpy())
 
+                if progress is not None:
+                    progress(WINDOW_STEP)
+
         return np.concatenate(probabilities)[:len(images)]
 
-    def _collect(self, frames: Iterable[Frame]) -> Tuple[np.ndarray, List[Tuple[int, float]]]:
+    def collect(self, frames: Iterable[Frame]) -> Tuple[np.ndarray, List[Tuple[int, float]]]:
+        """Downscale the frames to what the model expects, keeping their timing aside."""
         images, timeline = [], []
         for frame in frames:
             small = cv2.resize(frame.image, MODEL_INPUT_SIZE, interpolation=cv2.INTER_AREA)
@@ -106,7 +115,8 @@ class ShotDetector:
             np.repeat(images[-1:], tail, axis=0),
         ])
 
-    def _to_shots(self, probabilities: np.ndarray, timeline: List[Tuple[int, float]]) -> List[Shot]:
+    def to_shots(self, probabilities: np.ndarray, timeline: List[Tuple[int, float]]) -> List[Shot]:
+        """Turn per-frame probabilities into the shots between the transitions."""
         in_transition = probabilities > self.threshold
 
         bounds, start, previous = [], 0, False

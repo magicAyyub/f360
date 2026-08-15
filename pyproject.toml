@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-clips = "src.clips:app"
+f360 = "src.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
